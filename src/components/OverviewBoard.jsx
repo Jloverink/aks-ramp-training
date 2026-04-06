@@ -107,10 +107,21 @@ export default function OverviewBoard({ currentEmployee, onSelectEmployee }) {
           const lc = levelColor(emp.current_level)
           const lb = levelBg(emp.current_level)
 
+          const levelComplete = pct === 100
+
           return (
-            <div key={emp.id} className="emp-card" onClick={() => onSelectEmployee(emp)}>
+            <div key={emp.id} className="emp-card" onClick={() => onSelectEmployee(emp)}
+              style={ levelComplete ? { borderColor: 'var(--green)', borderWidth: 2 } : {} }>
+
+              {levelComplete && (
+                <div style={{ background: 'var(--greenbg)', borderRadius: 6, padding: '4px 10px', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ color: 'var(--green)', fontWeight: 700, fontSize: 12 }}>✓ Level {emp.current_level} Complete</span>
+                  {emp.current_level < 5 && <span style={{ color: 'var(--green)', fontSize: 11, opacity: 0.8 }}>— ready to advance</span>}
+                </div>
+              )}
+
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
-                <div className="emp-avatar" style={{ background: lc }}>{initials(emp.name)}</div>
+                <div className="emp-avatar" style={{ background: levelComplete ? 'var(--green)' : lc }}>{initials(emp.name)}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 600, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{emp.name}</div>
                   <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 1 }}>
@@ -120,14 +131,16 @@ export default function OverviewBoard({ currentEmployee, onSelectEmployee }) {
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                <span className="level-badge" style={{ background: lb, color: lc }}>
+                <span className="level-badge" style={{ background: levelComplete ? 'var(--greenbg)' : lb, color: levelComplete ? 'var(--green)' : lc }}>
                   L{emp.current_level} — {LEVEL_META[emp.current_level]?.pay}
                 </span>
-                <span style={{ fontSize: 12, color: 'var(--muted)' }}>{pct}%</span>
+                <span style={{ fontSize: 12, color: levelComplete ? 'var(--green)' : 'var(--muted)', fontWeight: levelComplete ? 600 : 400 }}>
+                  {levelComplete ? '100% done' : `${pct}%`}
+                </span>
               </div>
 
               <div className="progress-bar" style={{ marginBottom: 10 }}>
-                <div className="progress-fill" style={{ width: `${pct}%`, background: lc }} />
+                <div className="progress-fill" style={{ width: `${pct}%`, background: levelComplete ? 'var(--green)' : lc }} />
               </div>
 
               <RecurrentDot overdue={rec.overdue} soon={rec.soon} />
