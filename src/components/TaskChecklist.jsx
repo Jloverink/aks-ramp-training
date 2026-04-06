@@ -21,7 +21,7 @@ function BulkModal({ title, onConfirm, onClose, saving }) {
           <button className="btn-icon" onClick={onClose}>✕</button>
         </div>
         <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 14 }}>
-          This will mark all incomplete tasks as signed off by you. Pick the completion date — you can backdate this for existing staff.
+          This will mark all incomplete tasks as signed off by you. Pick the completion date — you can backdate for existing staff.
         </p>
         <div className="form-group">
           <label className="form-label">Date completed</label>
@@ -43,6 +43,7 @@ export default function TaskChecklist({ employee, currentEmployee, onAdvancement
   const [completions, setCompletions] = useState({})
   const [openModules, setOpenModules] = useState({})
   const [pendingTask, setPendingTask] = useState(null)
+  const [undoTask, setUndoTask] = useState(null)
   const [signoffDate, setSignoffDate] = useState(new Date().toISOString().split('T')[0])
   const [signoffDuration, setSignoffDuration] = useState('')
   const [saving, setSaving] = useState(false)
@@ -82,6 +83,14 @@ export default function TaskChecklist({ employee, currentEmployee, onAdvancement
     setPendingTask(null)
     setSignoffDate(new Date().toISOString().split('T')[0])
     setSignoffDuration('')
+  }
+
+  async function undoSignOff(completionId) {
+    setSaving(true)
+    await supabase.from('task_completions').delete().eq('id', completionId)
+    await fetchCompletions()
+    setSaving(false)
+    setUndoTask(null)
   }
 
   async function bulkSignOff(date) {
@@ -162,10 +171,12 @@ export default function TaskChecklist({ employee, currentEmployee, onAdvancement
       <div className="tab-bar" style={{ marginBottom: 12 }}>
         {levels.map(l => {
           const { done, total } = levelProgress(l)
+          const complete = done === total && total > 0
           return (
             <button key={l} className={`tab-btn ${activeLevel === l ? 'active' : ''}`}
-              onClick={() => setActiveLevel(l)}>
-              L{l} {done === total && total > 0 ? '✓' : `${done}/${total}`}
+              onClick={() => setActiveLevel(l)}
+              style={complete ? { color: 'var(--green)', fontWeight: 600 } : {}}>
+              L{l} {complete ? '✓ Done' : `${done}/${total}`}
             </button>
           )
         })}
@@ -188,24 +199,26 @@ export default function TaskChecklist({ employee, currentEmployee, onAdvancement
               </button>
             )}
             <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 20, fontWeight: 700, color: levelColor(activeLevel) }}>{lvlDone}/{lvlTotal}</div>
-              <div style={{ fontSize: 11, color: 'var(--muted)' }}>tasks</div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: allDone ? 'var(--green)' : levelColor(activeLevel) }}>
+                {allDone ? 'Complete' : `${lvlDone}/${lvlTotal}`}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--muted)' }}>{allDone ? '🎉 all tasks done' : 'tasks'}</div>
             </div>
           </div>
         </div>
         <div className="progress-bar" style={{ marginTop: 10 }}>
-          <div className="progress-fill" style={{ width: `${lvlTotal > 0 ? Math.round((lvlDone / lvlTotal) * 100) : 0}%`, background: levelColor(activeLevel) }} />
+          <div className="progress-fill" style={{ width: `${lvlTotal > 0 ? Math.round((lvlDone / lvlTotal) * 100) : 0}%`, background: allDone ? 'var(--green)' : levelColor(activeLevel) }} />
         </div>
       </div>
 
       {allDone && activeLevel === employee.current_level && activeLevel < 5 && (currentEmployee.role === 'supervisor' || currentEmployee.role === 'director') && (
         <div style={{ background: 'var(--greenbg)', border: '1px solid var(--green)', borderRadius: 10, padding: '12px 14px', marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
-            <div style={{ fontWeight: 600, color: 'var(--green)', fontSize: 14 }}>All tasks complete</div>
-            <div style={{ fontSize: 12, color: 'var(--green)', opacity: 0.8 }}>Ready to advance to Level {activeLevel + 1}</div>
+            <div style={{ fontWeight: 600, color: 'var(--green)', fontSize: 14 }}>All tasks complete — ready to advance</div>
+            <div style={{ fontSize: 12, color: 'var(--green)', opacity: 0.8 }}>{employee.name} is ready for Level {activeLevel + 1} ({LEVEL_META[activeLevel + 1]?.pay})</div>
           </div>
           <button className="btn btn-sm" style={{ background: 'var(--green)', color: 'white' }} onClick={() => onAdvancement(employee, activeLevel)}>
-            Advance
+            Advance to L{activeLevel + 1}
           </button>
         </div>
       )}
@@ -216,17 +229,18 @@ export default function TaskChecklist({ employee, currentEmployee, onAdvancement
         const modDone = mod.tasks.filter(t => completions[taskKey(activeLevel, mod.name, t)]).length
         const modIncomplete = mod.tasks.length - modDone
         const modPct = Math.round((modDone / mod.tasks.length) * 100)
+        const modComplete = modDone === mod.tasks.length
 
         return (
           <div key={mod.id} className="module-block">
             <div className="module-hdr" onClick={() => toggleModule(modKey)}>
               <div className="module-hdr-left">
-                <div style={{ width: 28, height: 28, borderRadius: '50%', background: modDone === mod.tasks.length ? 'var(--greenbg)' : levelBg(activeLevel), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: modDone === mod.tasks.length ? 'var(--green)' : levelColor(activeLevel), fontWeight: 700 }}>
-                  {modDone === mod.tasks.length ? '✓' : `${modDone}`}
+                <div style={{ width: 28, height: 28, borderRadius: '50%', background: modComplete ? 'var(--greenbg)' : levelBg(activeLevel), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: modComplete ? 'var(--green)' : levelColor(activeLevel), fontWeight: 700 }}>
+                  {modComplete ? '✓' : `${modDone}`}
                 </div>
                 <div>
-                  <div className="module-name">{mod.name}</div>
-                  <div className="module-count">{modDone}/{mod.tasks.length} tasks — {modPct}%</div>
+                  <div className="module-name" style={{ color: modComplete ? 'var(--green)' : 'var(--text)' }}>{mod.name}</div>
+                  <div className="module-count">{modComplete ? 'Complete' : `${modDone}/${mod.tasks.length} tasks — ${modPct}%`}</div>
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }} onClick={e => e.stopPropagation()}>
@@ -247,17 +261,22 @@ export default function TaskChecklist({ employee, currentEmployee, onAdvancement
                   const key = taskKey(activeLevel, mod.name, task)
                   const completion = completions[key]
                   const isPending = pendingTask === key
+                  const isUndo = undoTask === key
 
                   return (
                     <div key={task} className="task-row">
                       <div
                         className={`task-check ${completion ? 'done' : 'pending'}`}
                         onClick={() => {
-                          if (!completion && canSignOff) {
+                          if (completion && canSignOff) {
+                            setUndoTask(isUndo ? null : key)
+                            setPendingTask(null)
+                          } else if (!completion && canSignOff) {
                             setPendingTask(isPending ? null : key)
+                            setUndoTask(null)
                           }
                         }}
-                        title={completion ? `Signed off by ${completion.signed_off_by_name}` : canSignOff ? 'Click to sign off' : ''}
+                        title={completion ? 'Click to undo sign-off' : canSignOff ? 'Click to sign off' : ''}
                       >
                         {completion && <span style={{ color: 'white', fontSize: 11 }}>✓</span>}
                       </div>
@@ -265,9 +284,19 @@ export default function TaskChecklist({ employee, currentEmployee, onAdvancement
                         <div className="task-text" style={{ textDecoration: completion ? 'line-through' : 'none', opacity: completion ? 0.6 : 1 }}>
                           {task}
                         </div>
-                        {completion && (
+                        {completion && !isUndo && (
                           <div className="task-meta">
                             Signed off by {completion.signed_off_by_name} · {completion.completed_date ? new Date(completion.completed_date).toLocaleDateString() : new Date(completion.completed_at).toLocaleDateString()}{completion.duration_minutes ? ` · ${completion.duration_minutes} min` : ''}
+                          </div>
+                        )}
+                        {completion && isUndo && (
+                          <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: 12, color: 'var(--red)' }}>Undo this sign-off?</span>
+                            <button className="btn btn-sm btn-danger" disabled={saving}
+                              onClick={() => undoSignOff(completion.id)}>
+                              {saving ? '...' : 'Yes, remove it'}
+                            </button>
+                            <button className="btn btn-sm btn-ghost" onClick={() => setUndoTask(null)}>Cancel</button>
                           </div>
                         )}
                         {isPending && !completion && (
