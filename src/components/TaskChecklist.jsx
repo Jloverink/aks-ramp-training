@@ -11,6 +11,34 @@ function levelBg(l) {
   return map[l] || 'var(--bg)'
 }
 
+function BulkModal({ title, onConfirm, onClose, saving }) {
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+          <div style={{ fontWeight: 600, fontSize: 15 }}>{title}</div>
+          <button className="btn-icon" onClick={onClose}>✕</button>
+        </div>
+        <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 14 }}>
+          This will mark all incomplete tasks as signed off by you. Pick the completion date — you can backdate this for existing staff.
+        </p>
+        <div className="form-group">
+          <label className="form-label">Date completed</label>
+          <input type="date" className="form-input" value={date} onChange={e => setDate(e.target.value)} />
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          <button className="btn btn-ghost" style={{ flex: 1 }} onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" style={{ flex: 1, background: 'var(--green)' }} disabled={saving}
+            onClick={() => onConfirm(date)}>
+            {saving ? 'Saving...' : 'Mark all complete'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function TaskChecklist({ employee, currentEmployee, onAdvancement }) {
   const [completions, setCompletions] = useState({})
   const [openModules, setOpenModules] = useState({})
@@ -19,8 +47,9 @@ export default function TaskChecklist({ employee, currentEmployee, onAdvancement
   const [signoffDuration, setSignoffDuration] = useState('')
   const [saving, setSaving] = useState(false)
   const [activeLevel, setActiveLevel] = useState(employee.current_level)
+  const [bulkModal, setBulkModal] = useState(null)
 
-  const canSignOff = ['trainer','supervisor','director'].includes(currentEmployee.role)
+  const canSignOff = ['trainer', 'supervisor', 'director'].includes(currentEmployee.role)
 
   useEffect(() => { fetchCompletions() }, [employee.id])
 
@@ -55,6 +84,55 @@ export default function TaskChecklist({ employee, currentEmployee, onAdvancement
     setSignoffDuration('')
   }
 
+  async function bulkSignOff(date) {
+    setSaving(true)
+    const rows = []
+    if (bulkModal === 'level') {
+      const lvl = TRAINING_DATA[activeLevel]
+      if (lvl) {
+        lvl.modules.forEach(mod => {
+          mod.tasks.forEach(task => {
+            if (!completions[taskKey(activeLevel, mod.name, task)]) {
+              rows.push({
+                employee_id: employee.id,
+                level: activeLevel,
+                module_name: mod.name,
+                task_text: task,
+                signed_off_by_id: currentEmployee.id,
+                signed_off_by_name: currentEmployee.name,
+                completed_date: date,
+              })
+            }
+          })
+        })
+      }
+    } else if (bulkModal?.moduleId) {
+      const lvl = TRAINING_DATA[activeLevel]
+      const mod = lvl?.modules.find(m => m.id === bulkModal.moduleId)
+      if (mod) {
+        mod.tasks.forEach(task => {
+          if (!completions[taskKey(activeLevel, mod.name, task)]) {
+            rows.push({
+              employee_id: employee.id,
+              level: activeLevel,
+              module_name: mod.name,
+              task_text: task,
+              signed_off_by_id: currentEmployee.id,
+              signed_off_by_name: currentEmployee.name,
+              completed_date: date,
+            })
+          }
+        })
+      }
+    }
+    if (rows.length > 0) {
+      await supabase.from('task_completions').insert(rows)
+    }
+    await fetchCompletions()
+    setSaving(false)
+    setBulkModal(null)
+  }
+
   function toggleModule(key) {
     setOpenModules(prev => ({ ...prev, [key]: !prev[key] }))
   }
@@ -77,10 +155,10 @@ export default function TaskChecklist({ employee, currentEmployee, onAdvancement
   const { done: lvlDone, total: lvlTotal } = levelProgress(activeLevel)
   const allDone = lvlDone === lvlTotal && lvlTotal > 0
   const meta = LEVEL_META[activeLevel]
+  const lvlIncomplete = lvlTotal - lvlDone
 
   return (
     <div>
-      {/* Level selector tabs */}
       <div className="tab-bar" style={{ marginBottom: 12 }}>
         {levels.map(l => {
           const { done, total } = levelProgress(l)
@@ -93,7 +171,6 @@ export default function TaskChecklist({ employee, currentEmployee, onAdvancement
         })}
       </div>
 
-      {/* Level header */}
       <div style={{ background: levelBg(activeLevel), borderRadius: 10, padding: '12px 14px', marginBottom: 12, border: `1px solid ${levelColor(activeLevel)}22` }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
@@ -102,17 +179,25 @@ export default function TaskChecklist({ employee, currentEmployee, onAdvancement
             </div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{meta?.gate}</div>
           </div>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 20, fontWeight: 700, color: levelColor(activeLevel) }}>{lvlDone}/{lvlTotal}</div>
-            <div style={{ fontSize: 11, color: 'var(--muted)' }}>tasks</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {canSignOff && lvlIncomplete > 0 && (
+              <button className="btn btn-sm"
+                style={{ background: levelColor(activeLevel), color: 'white', fontSize: 12 }}
+                onClick={() => setBulkModal('level')}>
+                Sign off all {lvlIncomplete} remaining
+              </button>
+            )}
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 20, fontWeight: 700, color: levelColor(activeLevel) }}>{lvlDone}/{lvlTotal}</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)' }}>tasks</div>
+            </div>
           </div>
         </div>
         <div className="progress-bar" style={{ marginTop: 10 }}>
-          <div className="progress-fill" style={{ width: `${lvlTotal > 0 ? Math.round((lvlDone/lvlTotal)*100) : 0}%`, background: levelColor(activeLevel) }} />
+          <div className="progress-fill" style={{ width: `${lvlTotal > 0 ? Math.round((lvlDone / lvlTotal) * 100) : 0}%`, background: levelColor(activeLevel) }} />
         </div>
       </div>
 
-      {/* Advancement ready banner */}
       {allDone && activeLevel === employee.current_level && activeLevel < 5 && (currentEmployee.role === 'supervisor' || currentEmployee.role === 'director') && (
         <div style={{ background: 'var(--greenbg)', border: '1px solid var(--green)', borderRadius: 10, padding: '12px 14px', marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
@@ -125,11 +210,11 @@ export default function TaskChecklist({ employee, currentEmployee, onAdvancement
         </div>
       )}
 
-      {/* Module list */}
       {TRAINING_DATA[activeLevel]?.modules.map(mod => {
         const modKey = `${activeLevel}-${mod.id}`
         const isOpen = openModules[modKey] !== false
         const modDone = mod.tasks.filter(t => completions[taskKey(activeLevel, mod.name, t)]).length
+        const modIncomplete = mod.tasks.length - modDone
         const modPct = Math.round((modDone / mod.tasks.length) * 100)
 
         return (
@@ -144,7 +229,16 @@ export default function TaskChecklist({ employee, currentEmployee, onAdvancement
                   <div className="module-count">{modDone}/{mod.tasks.length} tasks — {modPct}%</div>
                 </div>
               </div>
-              <span style={{ fontSize: 12, color: 'var(--muted)', transform: isOpen ? 'rotate(180deg)' : 'none', display: 'inline-block', transition: 'transform 0.15s' }}>▼</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }} onClick={e => e.stopPropagation()}>
+                {canSignOff && modIncomplete > 0 && (
+                  <button className="btn btn-sm"
+                    style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--muted)', fontSize: 11 }}
+                    onClick={() => setBulkModal({ moduleId: mod.id, moduleName: mod.name })}>
+                    Sign off all
+                  </button>
+                )}
+                <span style={{ fontSize: 12, color: 'var(--muted)', transform: isOpen ? 'rotate(180deg)' : 'none', display: 'inline-block', transition: 'transform 0.15s' }}>▼</span>
+              </div>
             </div>
 
             {isOpen && (
@@ -181,30 +275,22 @@ export default function TaskChecklist({ employee, currentEmployee, onAdvancement
                             <div style={{ display: 'flex', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
                               <div style={{ flex: 1, minWidth: 140 }}>
                                 <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 3 }}>Date completed</div>
-                                <input
-                                  type="date"
-                                  className="form-input"
-                                  value={signoffDate}
+                                <input type="date" className="form-input" value={signoffDate}
                                   onChange={e => setSignoffDate(e.target.value)}
-                                  style={{ padding: '5px 8px', fontSize: 13 }}
-                                />
+                                  style={{ padding: '5px 8px', fontSize: 13 }} />
                               </div>
                               <div style={{ flex: 1, minWidth: 120 }}>
                                 <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 3 }}>Training time (minutes)</div>
-                                <input
-                                  type="number"
-                                  className="form-input"
-                                  value={signoffDuration}
+                                <input type="number" className="form-input" value={signoffDuration}
                                   onChange={e => setSignoffDuration(e.target.value)}
-                                  placeholder="e.g. 30"
-                                  min="1"
-                                  style={{ padding: '5px 8px', fontSize: 13 }}
-                                />
+                                  placeholder="e.g. 30" min="1"
+                                  style={{ padding: '5px 8px', fontSize: 13 }} />
                               </div>
                             </div>
                             <div style={{ display: 'flex', gap: 6 }}>
-                              <button className="btn btn-sm btn-primary" disabled={saving} onClick={() => signOffTask(activeLevel, mod.name, task)}>
-                                {saving ? '...' : '✓ Confirm sign-off'}
+                              <button className="btn btn-sm btn-primary" disabled={saving}
+                                onClick={() => signOffTask(activeLevel, mod.name, task)}>
+                                {saving ? '...' : 'Confirm sign-off'}
                               </button>
                               <button className="btn btn-sm btn-ghost" onClick={() => setPendingTask(null)}>Cancel</button>
                             </div>
@@ -219,6 +305,17 @@ export default function TaskChecklist({ employee, currentEmployee, onAdvancement
           </div>
         )
       })}
+
+      {bulkModal && (
+        <BulkModal
+          title={bulkModal === 'level'
+            ? `Sign off all remaining — Level ${activeLevel}`
+            : `Sign off all — ${bulkModal.moduleName}`}
+          onConfirm={bulkSignOff}
+          onClose={() => setBulkModal(null)}
+          saving={saving}
+        />
+      )}
     </div>
   )
 }
