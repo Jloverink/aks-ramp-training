@@ -15,11 +15,12 @@ export default function TaskChecklist({ employee, currentEmployee, onAdvancement
   const [completions, setCompletions] = useState({})
   const [openModules, setOpenModules] = useState({})
   const [pendingTask, setPendingTask] = useState(null)
+  const [signoffDate, setSignoffDate] = useState(new Date().toISOString().split('T')[0])
+  const [signoffDuration, setSignoffDuration] = useState('')
   const [saving, setSaving] = useState(false)
   const [activeLevel, setActiveLevel] = useState(employee.current_level)
 
   const canSignOff = ['trainer','supervisor','director'].includes(currentEmployee.role)
-    && currentEmployee.id !== employee.id
 
   useEffect(() => { fetchCompletions() }, [employee.id])
 
@@ -44,10 +45,14 @@ export default function TaskChecklist({ employee, currentEmployee, onAdvancement
       task_text: taskText,
       signed_off_by_id: currentEmployee.id,
       signed_off_by_name: currentEmployee.name,
+      completed_date: signoffDate,
+      duration_minutes: signoffDuration ? parseInt(signoffDuration) : null,
     }])
     await fetchCompletions()
     setSaving(false)
     setPendingTask(null)
+    setSignoffDate(new Date().toISOString().split('T')[0])
+    setSignoffDuration('')
   }
 
   function toggleModule(key) {
@@ -168,15 +173,41 @@ export default function TaskChecklist({ employee, currentEmployee, onAdvancement
                         </div>
                         {completion && (
                           <div className="task-meta">
-                            Signed off by {completion.signed_off_by_name} · {new Date(completion.completed_at).toLocaleDateString()}
+                            Signed off by {completion.signed_off_by_name} · {completion.completed_date ? new Date(completion.completed_date).toLocaleDateString() : new Date(completion.completed_at).toLocaleDateString()}{completion.duration_minutes ? ` · ${completion.duration_minutes} min` : ''}
                           </div>
                         )}
                         {isPending && !completion && (
-                          <div style={{ marginTop: 6, display: 'flex', gap: 6 }}>
-                            <button className="btn btn-sm btn-primary" disabled={saving} onClick={() => signOffTask(activeLevel, mod.name, task)}>
-                              {saving ? '...' : 'Confirm sign-off'}
-                            </button>
-                            <button className="btn btn-sm btn-ghost" onClick={() => setPendingTask(null)}>Cancel</button>
+                          <div style={{ marginTop: 8, background: 'var(--bg)', borderRadius: 8, padding: '10px 12px' }}>
+                            <div style={{ display: 'flex', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
+                              <div style={{ flex: 1, minWidth: 140 }}>
+                                <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 3 }}>Date completed</div>
+                                <input
+                                  type="date"
+                                  className="form-input"
+                                  value={signoffDate}
+                                  onChange={e => setSignoffDate(e.target.value)}
+                                  style={{ padding: '5px 8px', fontSize: 13 }}
+                                />
+                              </div>
+                              <div style={{ flex: 1, minWidth: 120 }}>
+                                <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 3 }}>Training time (minutes)</div>
+                                <input
+                                  type="number"
+                                  className="form-input"
+                                  value={signoffDuration}
+                                  onChange={e => setSignoffDuration(e.target.value)}
+                                  placeholder="e.g. 30"
+                                  min="1"
+                                  style={{ padding: '5px 8px', fontSize: 13 }}
+                                />
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: 6 }}>
+                              <button className="btn btn-sm btn-primary" disabled={saving} onClick={() => signOffTask(activeLevel, mod.name, task)}>
+                                {saving ? '...' : '✓ Confirm sign-off'}
+                              </button>
+                              <button className="btn btn-sm btn-ghost" onClick={() => setPendingTask(null)}>Cancel</button>
+                            </div>
                           </div>
                         )}
                       </div>
